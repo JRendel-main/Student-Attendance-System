@@ -3,16 +3,25 @@
 from tkinter import *
 from tkinter import messagebox
 from tkinter import ttk
+from PIL import ImageTk, Image
+# import mimemultipart and mimetypes modules
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+# import encoders
+from email import encoders
 import sqlite3
 import pyqrcode
 from pyqrcode import QRCode
+import pyqrcode
 import png
 import os
 import datetime
 import time
-import cv2 as cv
 import random
 import smtplib
+# import shutil module
+import shutil
 
 def random_id():
     # connect to database
@@ -45,7 +54,7 @@ def random_id():
         'student_year': year_combobox.get(),
         'student_section': section_combobox.get(),
         'student_email': email_entry.get(),
-        'student_contact': contact_number_entry.get()
+        'student_contact': contact_number_entry.get(),
     })
 
     # commit changes
@@ -68,27 +77,97 @@ def sendStuNoEmail():
     # get the student_email and Student_ID from database
     conn = sqlite3.connect("StudentAttendanceSystem.db")
     c = conn.cursor()
-    c.execute("SELECT * FROM tblstudent WHERE student_id = {}".format(studentran))
+    c.execute("SELECT * FROM tblstudent WHERE student_id = {}".format(int(studentran)))
     for record in c.fetchall():
         student_last_name = record[1]
         student_email = record[6]
         student_id = record[0]
 
+    c.execute("SELECT * FROM tblstudent WHERE student_id = " + str(studentran))
+
+    # commit changes
+    conn.commit()
+
+    # display student info to entry boxes
+    for record in c.fetchall():
+        student_last_name = record[2]
+        student_first_name = record[1]
+        student_id = record[0]
+        student_year = record[4]
+        student_section = record[5]
+
+    # create folder based on student year and section
+    if not os.path.exists("StudentQRCode"):
+        os.mkdir("StudentQRCode")
+    if not os.path.exists("StudentQRCode/" + student_year):
+        os.mkdir("StudentQRCode/" + student_year)
+    if not os.path.exists("StudentQRCode/" + student_year + "/" + student_section):
+        os.mkdir("StudentQRCode/" + student_year + "/" + student_section)
+
+    # check if qr code is already generated for student id if not generate qr code else display error message
+    if not os.path.exists("StudentQRCode/" + student_year + "/" + student_section + "/" + student_last_name + ".png"):
+        qr = pyqrcode.create(student_id)
+        qr.png("StudentQRCode/" + student_year + "/" + student_section + "/" + "Student " + student_last_name + ".png",
+               scale=8)
+        messagebox.showinfo("Student Attendance System", "QR Code generated successfully!")
+    else:
+        messagebox.showerror("Student Attendance System", "QR Code already generated!")
+
+
+
+    # send student id and qr code to student email
+    email = student_email
+    send_to_email = student_email
+    subject = 'Student ID'
+    message = 'Your Student ID is: {}'.format(student_id)
+    file_location = "StudentQRCode/" + student_year + "/" + student_section + "/" + "Student " + student_last_name + ".png"
+    file_name = "Student " + student_last_name + ".png"
+
+    # create a multipart message and set headers
+    msg = MIMEMultipart()
+    msg['From'] = email
+    msg['To'] = send_to_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(message, 'plain'))
+
+    # open the file to be sent
+    attachment = open(file_location, 'rb')
+
+    # instance of MIMEBase and named as p
+    p = MIMEBase('application', 'octet-stream')
+
+    # To change the payload into encoded form
+    p.set_payload((attachment).read())
+
+    # encode into base64
+    encoders.encode_base64(p)
+
+    p.add_header('Content-Disposition', "attachment; filename= %s" % file_name)
+
+    # attach the instance 'p' to instance 'msg'
+    msg.attach(p)
+
+    # creates SMTP session
     s = smtplib.SMTP('smtp.gmail.com', 587)
+
+    # start TLS for security
     s.starttls()
+
+    # Authentication
     s.login("hirotoshitest@gmail.com", "nhqdiwtariodmlxy")
-    message = """
 
-                Hello Mr/Ms. {} Here is your Student No.
+    # Converts the Multipart msg into a string
+    text = msg.as_string()
 
-                Hello Student your Student Number is {}
-                Have a Great Day!
+    # sending the mail
+    s.sendmail(email, send_to_email, text)
 
-                """.format(student_last_name, str(student_id))
-
-    s.sendmail("hirotoshitest@gmail.com", student_email, message)
+    # terminating the session
     s.quit()
-    messagebox.showinfo("Student Attendance System", "Student ID: " + str(student_id) + " sent to " + student_email)
+
+
+    # display message
+    messagebox.showinfo("Student Attendance System", "Student ID: " + str(student_id) + " sent to " + student_email + " successfully!")
 
 
 # get student info on search bar and display on entry boxes
@@ -184,7 +263,6 @@ def updatestudent():
 
     # create cursor
     c = conn.cursor()
-
     # create table tblstudent
     c.execute("""CREATE TABLE IF NOT EXISTS tblstudent (
                 student_id integer PRIMARY KEY,
@@ -219,9 +297,9 @@ def updatestudent():
                 })
 
     # commit changes
+    moveQRCode()
     conn.commit()
-
-    # close connection
+    # close connectio
     conn.close()
 
     # clear the text boxes
@@ -236,34 +314,60 @@ def updatestudent():
     # display message
     messagebox.showinfo("Student Attendance System", "Student updated successfully!")
 
+# generate qr code for student id and save to folder named based on student year and section
+def generateqrcode():
+    # connect to database
+    conn = sqlite3.connect("StudentAttendanceSystem.db")
 
-def searchqr():
-    # create search bar
-    search_bar = Entry(qrcode_frame, width=30, font=("Arial", 12))
-    search_bar.place(x=10, y=10)
+    # create cursor
+    c = conn.cursor()
 
-    # create search button
-    search_button = Button(qrcode_frame, text="Search", width=30, font=("Arial", 12))
-    search_button.place(x=10, y=60)
-    
-    # create canvas for qr
-    canvas = Canvas(qrcode_frame, width=300, height=300)
-    canvas.place(x=10, y=110)
+    # create table tblstudent
+    c.execute("""CREATE TABLE IF NOT EXISTS tblstudent (
+                student_id integer PRIMARY KEY,
+                student_fname text,
+                student_lname text,
+                student_course text,
+                student_year text,
+                student_section text,
+                student_email text,
+                student_contact text
+            )""")
 
-    # create qr code
-    qr = pyqrcode.create(search_bar.get())
+    # search student
+    c.execute("SELECT * FROM tblstudent WHERE student_id = " + search_bar.get())
 
-    # create image qr.png
-    qr.png("qr.png", scale=8)
+    # commit changes
+    conn.commit()
 
-    # open image qr.png
-    qr_image = PhotoImage(file="qr.png")
+    # display student info to entry boxes
+    for record in c.fetchall():
+        student_id = record[0]
+        student_fname = record[1]
+        student_lname = record[2]
+        student_course = record[3]
+        student_year = record[4]
+        student_section = record[5]
+        student_email = record[6]
+        student_contact = record[7]
 
-    # display image qr.png
-    canvas.create_image(0, 0, anchor=NW, image=qr_image)
+    # display image of qr code from folder based on student year and section display on qrcode_frame on center using place
+    qrcode_image = ImageTk.PhotoImage(Image.open("StudentQRCode/" + student_year + "/" + student_section + "/" + "Student "+ student_lname + ".png"))
+    qrcode_label = Label(qrcode_frame, image=qrcode_image)
+    qrcode_label.image = qrcode_image
+    qrcode_label.place(relx=0.5, rely=0.5, anchor=CENTER)
+    def removeqrcode():
+        # remove qr code label
+        qrcode_label.destroy()
 
-    # delete image qr.png
-    os.remove("qr.png")
+    # create button that removes qr code from qrcode frame
+    remove_qrcode_button = Button(qrcode_frame, text="Remove QR Code", command=removeqrcode)
+    remove_qrcode_button.place(relx=0.5, rely=0.9, anchor=CENTER)
+
+    # close connection
+    conn.close()
+
+
 
 def viewStudentLIst():
     # connect to database
@@ -344,20 +448,30 @@ def viewStudentLIst():
     # close connection
     conn.close()
 
-def qrcodegen():
-    # generate qr code based on student id on search bar
-    # create qrcode
-    qr = pyqrcode.create(search_bar.get())
+def moveQRCode():
+    # get student id, year, section
+    student_id = search_bar.get()
+    # connect to database
+    conn = sqlite3.connect("StudentAttendanceSystem.db")
 
-    # create image qr.png
-    qr.png("Student {}.png".format(search_bar.get()), scale=8)
+    # create cursor
+    c = conn.cursor()
 
-    # open image qr.png
-    qr_image = PhotoImage(file="Student {}.png".format(search_bar.get()))
+    # fetch student info
+    c.execute("SELECT * FROM tblstudent WHERE student_id = " + student_id)
+    records = c.fetchall()
 
-    # display image to qr code frame
-    canvas.create_image(0, 0, anchor=NW, image=qr_image)
-
+    # get student year and section
+    for record in records:
+        student_lname = record[2]
+        student_year = record[4]
+        student_section = record[5]
+    # create folder based on student year and section if not exist
+    if not os.path.exists("StudentQRCode/" + year_combobox.get() + "/" + section_combobox.get()):
+        os.makedirs("StudentQRCode/" + year_combobox.get() + "/" + section_combobox.get())
+    # move qr code from studentqrcode folder to studentqrcode based on student year and section
+    shutil.move("StudentQRCode/" + student_year + "/" + student_section + "/" + "Student " + student_lname + ".png", "StudentQRCode/" + year_combobox.get() + "/" + section_combobox.get() + "/" + "Student " + student_lname + ".png")
+    print("QR Code Moved")
 
 # create main ui
 root = Tk()
@@ -367,12 +481,16 @@ width = root.winfo_screenwidth()
 height = root.winfo_screenheight()
 root.geometry("%dx%d" % (width, height))
 
+def viewStudentAttendance():
+    #run external python file
+    os.system("python StudentAttendance.py")
+
 # create menu
 menu = Menu(root)
 root.config(menu=menu)
 submenu = Menu(menu, tearoff=0)
 menu.add_cascade(label="Students", menu=submenu)
-submenu.add_command(label="View Student Attendance")
+submenu.add_command(label="View Student Attendance", command=viewStudentAttendance)
 submenu.add_command(label="View Student List", command=viewStudentLIst)
 submenu.add_command(label="Exit", command=root.destroy)
 
@@ -468,7 +586,7 @@ delete_button = Button(button_frame, text="Delete", width=30, font=("Arial", 12)
 delete_button.place(x=10, y=110)
 
 # create button generate qr
-generate_qr_button = Button(button_frame, text="Generate QR", width=30, font=("Arial", 12), command=qrcodegen)
+generate_qr_button = Button(button_frame, text="Generate QR", width=30, font=("Arial", 12), command=generateqrcode)
 generate_qr_button.place(x=10, y=160)
 
 # create search bar and button for qr and place on top

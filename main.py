@@ -490,15 +490,20 @@ def scanqr():
                     # create cursor
                     c = conn.cursor()
                     # check if student id already scanned today
-                    c.execute("SELECT * FROM tblattendance WHERE student_id = " + data + " AND date = '" + date + "'")
+                    # display current date and time
+                    current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+                    current_time = datetime.datetime.now().strftime("%H:%M:%S")
+                    # insert date and time to database
+
+                    c.execute("SELECT * FROM tblattendance WHERE student_id = " + data + " AND date = '" + current_date + "'")
                     records = c.fetchall()
                     if len(records) == 0:
                         # insert student id and date and time to database
                         c.execute("INSERT INTO tblattendance VALUES (:student_id, :date, :time)",
                                   {
                                       'student_id': data,
-                                      'date': date,
-                                      'time': time
+                                      'date': current_date,
+                                      'time': current_time
                                   })
                         # commit changes
                         conn.commit()

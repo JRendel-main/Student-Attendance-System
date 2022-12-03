@@ -1,14 +1,10 @@
-# im going to create time-based attendance system using qrcode scanner
-# import libraries
 from tkinter import *
-from tkinter import messagebox
-from tkinter import ttk
+from tkinter import messagebox, ttk
+from tkcalendar import DateEntry
 from PIL import ImageTk, Image
-# import mimemultipart and mimetypes modules
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
-# import encoders
 from email import encoders
 import sqlite3
 import pyqrcode
@@ -20,8 +16,8 @@ import datetime
 import time
 import random
 import smtplib
-# import shutil module
 import shutil
+import cv2
 
 def random_id():
     # connect to database
@@ -112,8 +108,6 @@ def sendStuNoEmail():
         messagebox.showinfo("Student Attendance System", "QR Code generated successfully!")
     else:
         messagebox.showerror("Student Attendance System", "QR Code already generated!")
-
-
 
     # send student id and qr code to student email
     email = student_email
@@ -367,8 +361,6 @@ def generateqrcode():
     # close connection
     conn.close()
 
-
-
 def viewStudentLIst():
     # connect to database
     conn = sqlite3.connect("StudentAttendanceSystem.db")
@@ -481,16 +473,134 @@ width = root.winfo_screenwidth()
 height = root.winfo_screenheight()
 root.geometry("%dx%d" % (width, height))
 
-def viewStudentAttendance():
-    #run external python file
-    os.system("python StudentAttendance.py")
+def scanqr():
+    def scanAttendanceWebcam():
+        # create camera
+        camera = cv2.VideoCapture(2)
+        # create qr code detector
+        detector = cv2.QRCodeDetector()
+        # scan qr code from webcam and get student id and insert date and time to database based on student id
+        while True:
+            _, img = camera.read()
+            data, bbox, _ = detector.detectAndDecode(img)
+            if bbox is not None:
+                if data:
+                    # connect to database
+                    conn = sqlite3.connect("StudentAttendanceSystem.db")
+                    # create cursor
+                    c = conn.cursor()
+                    # check if student id already scanned today
+                    c.execute("SELECT * FROM tblattendance WHERE student_id = " + data + " AND date = '" + date + "'")
+                    records = c.fetchall()
+                    if len(records) == 0:
+                        # insert student id and date and time to database
+                        c.execute("INSERT INTO tblattendance VALUES (:student_id, :date, :time)",
+                                  {
+                                      'student_id': data,
+                                      'date': date,
+                                      'time': time
+                                  })
+                        # commit changes
+                        conn.commit()
+                        # close connection
+                        conn.close()
+            cv2.imshow("code detector", img)
+            if cv2.waitKey(1) == ord("q"):
+                break
+        camera.release()
+        cv2.destroyAllWindows()
+    conn = sqlite3.connect("StudentAttendanceSystem.db")
+    # create cursor
+    c = conn.cursor()
+
+    # create table tblattendance
+    c.execute("""CREATE TABLE IF NOT EXISTS tblattendance (
+                student_id integer PRIMARY KEY,
+                date text,
+                time text,
+                FOREIGN KEY (student_id) REFERENCES tblstudent(student_id)
+            )""")
+    # commit changes
+    conn.commit()
+    def insertable():
+        # connect to database
+        conn = sqlite3.connect("StudentAttendanceSystem.db")
+        # create cursor
+        c = conn.cursor()
+        # clear treeview
+        tree.delete(*tree.get_children())
+
+        # fetch student last first name, last name from tblstudent and date and time from tblattendance
+        c.execute("SELECT tblstudent.student_id, tblstudent.student_fname, tblstudent.student_lname, tblattendance.date, tblattendance.time FROM tblstudent INNER JOIN tblattendance ON tblstudent.student_id = tblattendance.student_id")
+        records = c.fetchall()
+
+        # insert student last first name, last name from tblstudent and compare date to date.entry and check if present or absent and time to treeview
+
+
+        for record in records:
+            date_entry1 = ''.join(letter for letter in str(date_entry.get()) if letter.isalnum())
+            date_record = ''.join(letter for letter in str(record[3]) if letter.isalnum())
+            if date_entry1 == date_record:
+                tree.insert("", 0, values=(record[0], record[1], record[2], "Present", record[4]))
+            else:
+                tree.insert("", 0, values=(record[0], record[1], record[2], "Absent", "Not Applicable"))
+            print("Date Entry: " + date_entry1)
+            print("Date Record: " + date_record)
+        # commit changes
+        conn.commit()
+        # close connection
+        conn.close()
+    # create new window for qr code scanner treeview, combobox, and search bar, and button
+    scan_qr_window = Toplevel()
+    scan_qr_window.title("Scan QR Code")
+    scan_qr_window.geometry("800x600")
+    scan_qr_window.resizable(False, False)
+    scan_qr_window.state("zoomed")
+    # create treeview
+    treeview = ttk.Treeview(scan_qr_window, height=50)
+    treeview.pack(side=LEFT, fill=BOTH, expand=True)
+    # create scrollbar
+    scrollbar = ttk.Scrollbar(scan_qr_window, orient=VERTICAL, command=treeview.yview)
+    scrollbar.pack(side=RIGHT, fill=Y)
+    # configure treeview
+    treeview.configure(yscrollcommand=scrollbar.set)
+    tree = ttk.Treeview(scan_qr_window)
+    # add student id, firstname, lastname, attendance status, and date to treeview
+    tree["columns"] = ("studentid", "fname", "lname", "status", "timein")
+    tree.column("studentid", width=100)
+    tree.column("fname", width=100)
+    tree.column("lname", width=100)
+    tree.column("status", width=100)
+    tree.column("timein", width=100)
+    tree.heading("studentid", text="Student ID")
+    tree.heading("fname", text="First Name")
+    tree.heading("lname", text="Last Name")
+    tree.heading("status", text="Attendance Status")
+    tree.heading("timein", text="Time In")
+    tree.pack(side=LEFT, fill=BOTH, expand=1)
+    # use tkcalendar to get date
+    # create date label
+    date_label = Label(scan_qr_window, text="Date: ", font=("Arial", 12))
+    date_label.place(x=10, y=10)
+    # create date entry
+    date_entry = DateEntry(scan_qr_window, width=12, background="darkblue", foreground="white", borderwidth=2, font=("Arial", 12), date_pattern="yyyy-mm-dd")
+    date_entry.place(x=60, y=10)
+    # create display attendance button
+    display_attendance_button = Button(scan_qr_window, text="Display Attendance", command=insertable, font=("Arial", 12))
+    display_attendance_button.place(x=10, y=40)
+    # create button for scan attendance using webcam
+    scan_attendance_webcam_button = Button(scan_qr_window, text="Scan Attendance Using Webcam", command=scanAttendanceWebcam)
+    scan_attendance_webcam_button.place(x=10, y=100)
+    # create label for Last Scanned Attendance
+    last_scanned_attendance_label = Label(scan_qr_window, text="Last Scanned Attendance", font=("Arial", 12))
+    last_scanned_attendance_label.place(x=10, y=150)
 
 # create menu
 menu = Menu(root)
 root.config(menu=menu)
 submenu = Menu(menu, tearoff=0)
 menu.add_cascade(label="Students", menu=submenu)
-submenu.add_command(label="View Student Attendance", command=viewStudentAttendance)
+submenu.add_command(label="View Student Attendance", command=scanqr)
 submenu.add_command(label="View Student List", command=viewStudentLIst)
 submenu.add_command(label="Exit", command=root.destroy)
 
